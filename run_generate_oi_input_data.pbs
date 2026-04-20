@@ -8,6 +8,8 @@
 #PBS -o /gpfs01/v2/Q9157/momoe/geo_polar_blended_sst/Linux_JCUHPC/blended_home/Logs/generate_oi_input_data.log
 
 cd $PBS_O_WORKDIR
+export SST_ENV=$PBS_O_WORKDIR
+
 # Add this to all of your scripts
 shopt -s expand_aliases
 source /etc/profile.d/modules.sh
