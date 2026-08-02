@@ -132,7 +132,7 @@ eval(['save ' dir_analysis datalabel ...
 
 
 % Subsample if needed...
-
+% only every 5th row and column is filled with real values from sst-the other entries remain NaNs
 thin=5;			% ...OSTIA is 1/20 degree so subsampling 1 in 5 gives 1/4 degree (same as for RTG_HR)
 
 allvals(1:thin:end,1:thin:end)=sst(1:thin:end,1:thin:end);

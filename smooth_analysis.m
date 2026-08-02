@@ -17,7 +17,8 @@ an(find(isnan(a)))=0; % replace NaNs with 0 for convolution
 % Smoothing
 % 1. Sum all SST values inside each smooth_factor x smooth_factor window.
 % 2. Count the number of valid pixels in that winddow.
-% as: smoothed/averaged/mean value for each centre pixel
+% as: Replace by the smoothed/averaged/mean value at each centre pixel of that window
+% Moves over every pixel
 as = conv2(an,ones(smooth_factor),'same')./conv2(i,ones(smooth_factor),'same');
 
 if(length(land)>0)

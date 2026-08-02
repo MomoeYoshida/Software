@@ -207,6 +207,7 @@ land_or_ice=find(ice_mask>0);
 % sst_variability_min    = minimum value allowed. 
 % sst_variability_max    = maximum value allowed.
 
+% [P1][ANDY/SCOTT/ME][Q]: what is sst_variability? how does it used? what does it do? key variable for my study?
 % [P1][Ch1][ANDY][Q]: Why sst_variability_scaling=0.5?
 sst_variability=sst_variability_scaling*sst_variability; % this sst_variability is what we loaded in line 114 (from the previous day's analysis)
 sst_variability=min(sst_variability, sst_variability_max); % limit sst_variability to sst_variability_max
@@ -388,7 +389,7 @@ eval(['addpath ' dir_ms_executable])
 % User is informed of files being loaded.
 
 message2(['*** Loading ' dir_ancillary name_oi_oceans_coupling ]);
-eval(['load ' dir_ancillary name_oi_oceans_coupling ]);
+eval(['load ' dir_ancillary name_oi_oceans_coupling ]); % [ME][Q] how does this data file look like? used for what? sth to do with ocean basin separation?
 message2(['*** Loading ' dir_ancillary name_oi_state_values ]);
 eval(['load ' dir_ancillary name_oi_state_values ]);
 message2(['*** Loading ' dir_ancillary name_oi_scales ]);
