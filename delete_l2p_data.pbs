@@ -1,0 +1,314 @@
+#!/bin/bash
+#PBS -j oe
+#PBS -m ae
+#PBS -N deleteL2P
+#PBS -M momoe.yoshida@my.jcu.edu.au
+#PBS -l walltime=02:00:00
+#PBS -l select=1:ncpus=1:mem=4gb
+set -euo pipefail
+
+# =============================================================================
+# Fixed configuration
+# =============================================================================
+
+BASE_DIR="/gpfs01/v2/Q9157/momoe/geo_polar_blended_sst/Linux_JCUHPC/blended_home"
+DATA_DIR="${BASE_DIR}/Data"
+
+# These directories correspond to the output folders used by
+# download_podaac_l2pdata.pbs.
+L2P_FOLDERS=(
+    "goes"
+    "mtsat"
+    "mio"
+    "msg"
+    "sst_metop"
+    "sst_metopc"
+    "sst_jpss"
+    "sst_npp"
+)
+
+# Set DRY_RUN=1, dry-run mode, during testing to list files without deleting them.
+#
+# submit_make_op_sst_workflow.sh can override this with:
+#   qsub -v ANALYSIS_DATE=2025-04-01,DRY_RUN=1 delete_l2p_data.pbs
+DRY_RUN="${DRY_RUN:-0}"
+
+# =============================================================================
+# Read and validate variables passed by the workflow controller
+# =============================================================================
+
+: "${ANALYSIS_DATE:?ERROR: ANALYSIS_DATE was not supplied}"
+
+if [[ ! "$ANALYSIS_DATE" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+    echo "ERROR: ANALYSIS_DATE must use YYYY-MM-DD format."
+    echo "Received: $ANALYSIS_DATE"
+    echo "Expected: YYYY-MM-DD"
+    echo "Example : 2025-04-01"
+    exit 1
+fi
+
+# Confirm that ANALYSIS_DATE is a valid calendar date.
+if ! PARSED_DATE=$(
+    date --utc \
+        --date="${ANALYSIS_DATE}T00:00:00Z" \
+        "+%Y-%m-%d" 2>/dev/null
+); then
+    echo "ERROR: ANALYSIS_DATE could not be parsed."
+    echo "Received: $ANALYSIS_DATE"
+    exit 1
+fi
+
+if [[ "$PARSED_DATE" != "$ANALYSIS_DATE" ]]; then
+    echo "ERROR: ANALYSIS_DATE is not a valid calendar date."
+    echo "Received: $ANALYSIS_DATE"
+    exit 1
+fi
+
+if [[ "$DRY_RUN" != "0" && "$DRY_RUN" != "1" ]]; then
+    echo "ERROR: DRY_RUN must be either 0 or 1."
+    echo "Received: $DRY_RUN"
+    exit 1
+fi
+
+# =============================================================================
+# Generate date formats likely to occur in L2P filenames
+# =============================================================================
+
+# Calendar-date form, for example:
+#   2025-04-01 -> 20250401
+DATE_YYYYMMDD=$(
+    date --utc \
+        --date="${ANALYSIS_DATE}T00:00:00Z" \
+        "+%Y%m%d"
+)
+
+# Year and day-of-year form, for example:
+#   2025-04-01 -> 2025091
+DATE_YYYYDDD=$(
+    date --utc \
+        --date="${ANALYSIS_DATE}T00:00:00Z" \
+        "+%Y%j"
+)
+
+# ISO-style date without time.
+DATE_ISO="$ANALYSIS_DATE"
+
+# =============================================================================
+# Safety checks
+# =============================================================================
+
+EXPECTED_DATA_DIR="${BASE_DIR}/Data"
+
+if [[ "$DATA_DIR" != "$EXPECTED_DATA_DIR" ]]; then
+    echo "ERROR: DATA_DIR failed the safety check."
+    echo "DATA_DIR         : $DATA_DIR"
+    echo "Expected DATA_DIR: $EXPECTED_DATA_DIR"
+    exit 1
+fi
+
+if [[ ! -d "$DATA_DIR" ]]; then
+    echo "ERROR: Data directory does not exist:"
+    echo "  $DATA_DIR"
+    exit 1
+fi
+
+# Prevent catastrophic deletion if BASE_DIR or DATA_DIR is unexpectedly empty.
+if [[ -z "$BASE_DIR" || -z "$DATA_DIR" || "$DATA_DIR" == "/" ]]; then
+    echo "ERROR: Unsafe directory configuration detected."
+    exit 1
+fi
+
+# =============================================================================
+# Job information
+# =============================================================================
+
+echo "============================================================"
+echo "L2P data cleanup"
+echo "============================================================"
+echo "PBS job ID       : ${PBS_JOBID:-Not available}"
+echo "PBS job name     : ${PBS_JOBNAME:-Not available}"
+echo "Compute host     : $(hostname)"
+echo "Analysis date    : $ANALYSIS_DATE"
+echo "YYYYMMDD pattern : $DATE_YYYYMMDD"
+echo "YYYYDDD pattern  : $DATE_YYYYDDD"
+echo "ISO date pattern : $DATE_ISO"
+echo "Data directory   : $DATA_DIR"
+echo "Dry-run mode     : $DRY_RUN"
+echo "Start time       : $(date)"
+echo "============================================================"
+
+# =============================================================================
+# Find candidate files
+# =============================================================================
+
+# Store the candidate list in the job's temporary directory when available.
+TEMP_ROOT="${TMPDIR:-/tmp}"
+CANDIDATE_FILE="${TEMP_ROOT}/delete_l2p_candidates_${PBS_JOBID:-$$}.txt"
+
+# Ensure the temporary candidate list is removed when this script exits.
+cleanup_temporary_file()
+{
+    rm -f "$CANDIDATE_FILE"
+}
+
+trap cleanup_temporary_file EXIT
+
+: > "$CANDIDATE_FILE"
+
+for folder in "${L2P_FOLDERS[@]}"; do
+
+    target_dir="${DATA_DIR}/${folder}"
+
+    if [[ ! -d "$target_dir" ]]; then
+        echo "WARNING: L2P directory does not exist; skipping:"
+        echo "  $target_dir"
+        continue
+    fi
+
+    # Match these common date representations:
+    #
+    #   YYYYMMDD, for example 20250401
+    #   YYYYDDD,  for example 2025091
+    #   YYYY-MM-DD
+    #
+    # Only regular files and symbolic links are selected. Directories are
+    # never selected for deletion here.
+    find "$target_dir" \
+        \( -type f -o -type l \) \
+        \( \
+            -name "*${DATE_YYYYMMDD}*" -o \
+            -name "*${DATE_YYYYDDD}*"  -o \
+            -name "*${DATE_ISO}*" \
+        \) \
+        -print >> "$CANDIDATE_FILE"
+
+done
+
+# Remove duplicate paths in case a filename matches multiple date patterns.
+SORTED_CANDIDATE_FILE="${CANDIDATE_FILE}.sorted"
+
+sort -u "$CANDIDATE_FILE" > "$SORTED_CANDIDATE_FILE"
+mv "$SORTED_CANDIDATE_FILE" "$CANDIDATE_FILE"
+
+FILE_COUNT=$(wc -l < "$CANDIDATE_FILE")
+FILE_COUNT=${FILE_COUNT//[[:space:]]/}
+
+echo
+echo "Candidate files found: $FILE_COUNT"
+
+if (( FILE_COUNT == 0 )); then
+    echo "No L2P files matched the analysis date."
+    echo "No files were deleted."
+    echo
+    echo "This may mean:"
+    echo "  1. the L2P files were already removed;"
+    echo "  2. no L2P files were downloaded for the date; or"
+    echo "  3. the filenames use a different date convention."
+    echo
+    echo "End time: $(date)"
+    exit 0
+fi
+
+echo
+echo "Files selected for cleanup:"
+echo "------------------------------------------------------------"
+
+while IFS= read -r candidate_file; do
+    printf '%s\n' "$candidate_file"
+done < "$CANDIDATE_FILE"
+
+echo "------------------------------------------------------------"
+
+# =============================================================================
+# Dry-run mode
+# =============================================================================
+
+if [[ "$DRY_RUN" == "1" ]]; then
+    echo
+    echo "DRY_RUN=1: No files were deleted."
+    echo "Review the listed paths before running with DRY_RUN=0."
+    echo "End time: $(date)"
+    exit 0
+fi
+
+# =============================================================================
+# Delete the date-specific L2P files
+# =============================================================================
+
+deleted_count=0
+failed_count=0
+
+while IFS= read -r candidate_file; do
+
+    # Resolve the candidate's parent path and confirm that it remains beneath
+    # the configured Data directory.
+    candidate_parent=$(dirname "$candidate_file")
+
+    if [[ "$candidate_parent" != "$DATA_DIR"/* ]]; then
+        echo "ERROR: Refusing to delete a path outside DATA_DIR:"
+        echo "  $candidate_file"
+        failed_count=$((failed_count + 1))
+        continue
+    fi
+
+    if rm -f -- "$candidate_file"; then
+        echo "Deleted: $candidate_file"
+        deleted_count=$((deleted_count + 1))
+    else
+        echo "ERROR: Could not delete: $candidate_file"
+        failed_count=$((failed_count + 1))
+    fi
+
+done < "$CANDIDATE_FILE"
+
+# =============================================================================
+# Optional removal of empty subdirectories
+# =============================================================================
+
+# Remove empty subdirectories only. The eight main L2P directories themselves
+# are preserved.
+for folder in "${L2P_FOLDERS[@]}"; do
+
+    target_dir="${DATA_DIR}/${folder}"
+
+    if [[ ! -d "$target_dir" ]]; then
+        continue
+    fi
+
+    # -mindepth 1 preserves target_dir itself.
+    # -depth processes child directories before their parents.
+    find "$target_dir" \
+        -depth \
+        -mindepth 1 \
+        -type d \
+        -empty \
+        -delete
+
+done
+
+# =============================================================================
+# Final status
+# =============================================================================
+
+echo
+echo "============================================================"
+echo "L2P cleanup summary"
+echo "============================================================"
+echo "Analysis date : $ANALYSIS_DATE"
+echo "Files matched : $FILE_COUNT"
+echo "Files deleted : $deleted_count"
+echo "Failures      : $failed_count"
+echo "End time      : $(date)"
+echo "============================================================"
+
+if (( failed_count > 0 )); then
+    echo "ERROR: One or more L2P files could not be deleted."
+    exit 1
+fi
+
+if (( deleted_count != FILE_COUNT )); then
+    echo "ERROR: Deleted-file count does not match candidate-file count."
+    exit 1
+fi
+
+echo "L2P cleanup completed successfully."

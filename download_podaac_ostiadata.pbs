@@ -1,0 +1,70 @@
+#!/bin/bash
+#PBS -j oe
+#PBS -m ae
+#PBS -N DownloadPODAACData
+#PBS -M momoe.yoshida@my.jcu.edu.au
+#PBS -l walltime=48:00:00
+#PBS -l select=1:ncpus=2:mem=64gb
+
+set -e # stop script if any error occurs
+
+# -------------------------------------------------------------------------
+# User settings
+# -------------------------------------------------------------------------
+
+OUTDIR="/gpfs01/v2/Q9157/momoe/geo_polar_blended_sst/Linux_JCUHPC/blended_home/Data"
+DATASET="OSTIA-UKMO-L4-GLOB-v2.0"
+
+FOLDER="OSTIA"
+DOWNLOAD_DIR="${OUTDIR}/${FOLDER}"
+
+CONTAINER="${OUTDIR}/podaac.sif"
+
+: "${TAR_DATE:?ERROR: TAR_DATE was not supplied by submit_make_op_sst_workflow.sh}"
+# Verify that TAR_DATE has the required PO.DAAC ISO-8601 UTC format.
+if [[ ! "$TAR_DATE" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T00:00:00Z$ ]]; then
+	echo "ERROR: TAR_DATE has an invalid format."
+	echo "Received: $TAR_DATE"
+	echo "Expected: YYYY-MM-DDT00:00:00Z"
+	echo "Example : 2016-10-31T00:00:00Z"
+	exit 1
+fi
+
+# Validate the calendar date and retain its YYYY-MM-DD component.
+TARGET_DATE_ONLY="${TAR_DATE:0:10}"
+
+if ! PARSED_TARGET_DATE=$(
+	date --utc \
+		--date="$TAR_DATE" \
+		"+%Y-%m-%d" 2>/dev/null
+); then
+	echo "ERROR: TAR_DATE could not be parsed: $TAR_DATE"
+	exit 1
+fi
+
+if [[ "$PARSED_TARGET_DATE" != "$TARGET_DATE_ONLY" ]]; then
+	echo "ERROR: TAR_DATE is not a valid calendar date: $TAR_DATE"
+	exit 1
+fi
+
+PREV_DATE=$(date --utc \
+        --date="${TAR_DATE} -10 days" \
+        "+%Y-%m-%dT%H:%M:%SZ")
+
+END_DATE=$(date --utc \
+	--date="${TAR_DATE} +1 day" \
+	"+%Y-%m-%dT%H:%M:%SZ")
+
+echo "======================================="
+echo " Starting PO.DAAC downloads via Apptainer"
+echo "======================================="
+
+apptainer exec "$CONTAINER" podaac-data-downloader \
+	-c "$DATASET" \
+	-d "$DOWNLOAD_DIR" \
+	--start-date "$PREV_DATE" \
+	--end-date "$END_DATE"
+
+echo "======================================="
+echo "All downloads completed successfully at $(date)"
+echo "======================================="

@@ -1,0 +1,47 @@
+#!/bin/bash
+#PBS -j oe
+#PBS -m ae
+#PBS -N update_all_biases 
+#PBS -M momoe.yoshida@my.jcu.edu.au
+#PBS -l walltime=24:00:00
+#PBS -l select=1:ncpus=1:mem=64gb
+
+set -euo pipefail
+
+cd $PBS_O_WORKDIR
+export SST_ENV=$PBS_O_WORKDIR
+
+# Add this to all of your scripts
+shopt -s expand_aliases
+source /etc/profile.d/modules.sh
+
+# Output some useful information about
+# the job we are running
+echo "Job identifier is $PBS_JOBID"
+echo "Working directory is $PBS_O_WORKDIR"
+echo "Start time: $(date)"
+
+DAY_OF_YEAR_DECIMAL=$((10#$DAY_OF_YEAR))
+
+# Load the container we want to use
+# It is a good idea to always specify the version number 
+module purge
+module load matlab/2024a
+#module load gcc/10.5.0
+
+# Run your code
+#matlab -nodisplay -nosplash <<'EOF'
+#clear mex
+#dbstop if error
+#dbmex on
+#
+#generate_oi_input_data(2025,12,'all')
+#
+#exit
+#EOF
+
+matlab -batch "clear mex;
+update_all_biases(${YEAR},${DAY_OF_YEAR_DECIMAL})"
+
+
+echo "End time: $(date)"

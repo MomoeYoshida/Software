@@ -1,0 +1,39 @@
+#!/bin/bash
+#PBS -j oe
+#PBS -m ae
+#PBS -N generate_oi_sst
+#PBS -M momoe.yoshida@my.jcu.edu.au
+#PBS -l walltime=24:00:00
+#PBS -l select=1:ncpus=2:mem=64gb
+#PBS -o /gpfs01/v2/Q9157/momoe/geo_polar_blended_sst/Linux_JCUHPC/blended_home/Logs/generate_oi_sst.log
+
+cd $PBS_O_WORKDIR
+# Add this to all of your scripts
+shopt -s expand_aliases
+source /etc/profile.d/modules.sh
+
+# Output some useful information about
+# the job we are running
+echo "Job identifier is $PBS_JOBID"
+echo "Working directory is $PBS_O_WORKDIR"
+echo "Start time: $(date)"
+
+# Load the container we want to use
+# It is a good idea to always specify the version number 
+module purge
+module load matlab/2024a
+module load gcc/10.5.0
+
+# Run your code with useful debugging commands.
+# <<'EOF': send the following commands to MATLAB as input
+matlab -nodisplay -nosplash <<'EOF'
+clear mex
+dbstop if error
+dbmex on
+
+generate_oi_sst(2025,012)
+
+exit
+EOF
+
+echo "End time: $(date)"

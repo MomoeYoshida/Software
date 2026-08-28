@@ -1,0 +1,127 @@
+#!/bin/bash
+#PBS -j oe
+#PBS -m ae
+#PBS -N DownloadPODAACData
+#PBS -M momoe.yoshida@my.jcu.edu.au
+#PBS -l walltime=48:00:00
+#PBS -l select=1:ncpus=2:mem=64gb
+
+set -e # stop script if any error occurs
+
+# -------------------------------------------------------------------------
+# User settings
+# -------------------------------------------------------------------------
+
+: "${ANALYSIS_DATE:?ERROR: ANALYSIS_DATE was not supplied by submit_make_op_sst_workflow.sh}"
+if [[ ! "$ANALYSIS_DATE" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+	echo "ERROR: ANALYSIS_DATE has an invalid format."
+	echo "Received: $ANALYSIS_DATE"
+	echo "Expected: YYYY-MM-DD"
+	echo "Example : 2025-04-01"
+	exit 1
+fi
+
+START_DATE="${ANALYSIS_DATE}T00:00:00Z"
+END_DATE=$(date --utc \
+	--date="${ANALYSIS_DATE} +1 day" \
+	"+%Y-%m-%dT00:00:00Z"
+)
+
+
+# List of datasets to download
+#DATASETS=(
+#"H09-AHI-L2P-ACSPO-v2.90"
+#"AVHRRF_MB-STAR-L2P-v2.80"
+#"AVHRRF_MC-STAR-L2P-v2.80"
+#"VIIRS_N20-STAR-L2P-v2.80"
+#"N21-VIIRS-L2P-ACSPO-v2.80"
+#)
+DATASETS=(
+"G18-ABI-L2P-ACSPO-v2.90"
+"ABI_G16-STAR-L2P-v2.70"
+"H09-AHI-L2P-ACSPO-v2.90"
+"MSG02-OSPO-L2P-v1.0"
+"MSG03-OSPO-L2P-v1.0"
+"AVHRRF_MB-STAR-L2P-v2.80"
+"AVHRRF_MC-STAR-L2P-v2.80"
+"VIIRS_N20-STAR-L2P-v2.80"
+"N21-VIIRS-L2P-ACSPO-v2.80"
+"VIIRS_NPP-STAR-L2P-v2.80"
+)
+
+OUTDIR="/gpfs01/v2/Q9157/momoe/geo_polar_blended_sst/Linux_JCUHPC/blended_home/Data"
+#FOLDERS=(
+#"mtsat"
+#"sst_metop"
+#"sst_metopc"
+#"sst_jpss"
+#"sst_jpss"
+#)
+FOLDERS=(
+"goes"
+"goes"
+"mtsat"
+"mio"
+"msg"
+"sst_metop"
+"sst_metopc"
+"sst_jpss"
+"sst_jpss"
+"sst_npp"
+)
+
+CONTAINER="${OUTDIR}/podaac.sif"
+
+echo "======================================="
+echo " Starting PO.DAAC downloads via Apptainer"
+echo "======================================="
+
+# Launch all downloads in parallel
+pids=()
+# Loop through datasets and folder pairs
+for i in "${!DATASETS[@]}"; do
+    ds="${DATASETS[$i]}"
+    folder="${FOLDERS[$i]}"
+
+    echo "---------------------------------------"
+    echo " Dataset: $ds"
+    echo " Folder:  $folder"
+    echo "---------------------------------------"
+
+    apptainer exec "$CONTAINER" podaac-data-downloader \
+        -c "$ds" \
+        -d "$OUTDIR/$folder" \
+        --start-date "$START_DATE" \
+        --end-date "$END_DATE" &
+    pids+=($!)
+    echo "Started $ds (PID: ${pids[-1]})"
+done
+
+echo "---------------------------------------"
+echo "All ${#pids[@]} downloads launched. Waiting for completion..."
+echo "---------------------------------------"
+
+# Wait for all background jobs
+failed=0
+for i in "${!pids[@]}"; do
+    if ! wait "${pids[$i]}"; then
+        echo "ERROR: Download failed for ${DATASETS[$i]}"
+        ((failed++)) || true
+    else
+        echo "Finished ${DATASETS[$i]}"
+        dir="$OUTDIR/${FOLDERS[$i]}"
+        chmod -R u=rwx,go=rx "$dir"
+        echo "Permissions updated: $dir"
+    fi
+done
+
+if [[ $failed -gt 0 ]]; then
+    echo "======================================="
+    echo "WARNING: $failed download(s) failed at $(date)"
+    echo "======================================="
+    exit 1
+fi
+
+echo "======================================="
+echo "All downloads completed successfully at $(date)"
+echo "======================================="
