@@ -7,8 +7,8 @@ global yesterday
 init_par_info;
 init_file_info;
 
-bias_smoothing_factor = par_info.bias_smoothing_factor;
-bias_weighting_factor = par_info.bias_weighting_factor;
+bias_smoothing_factor = par_info.bias_smoothing_factor; %45, odd-sized window/convolution kernael is symmetrically centred on a grid cell
+bias_weighting_factor = par_info.bias_weighting_factor; % [0.4, 0.6]
 bad_val               = par_info.bad_val;
 tenth_or_twentieth    = par_info.tenth_or_twentieth;
 
