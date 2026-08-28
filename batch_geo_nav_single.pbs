@@ -4,7 +4,6 @@
 #PBS -M momoe.yoshida@my.jcu.edu.au
 #PBS -l walltime=72:00:00
 #PBS -l select=1:ncpus=1:mem=64gb
-#PBS -o /gpfs01/v2/Q9157/momoe/geo_polar_blended_sst/Linux_JCUHPC/blended_home/Logs/tmp.log
 #PBS -N batch_geo_nav_single
 
 cd $PBS_O_WORKDIR
