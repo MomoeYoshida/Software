@@ -1,13 +1,16 @@
 #!/bin/bash
 #PBS -j oe
 #PBS -m ae
-#PBS -N generate_oi_sst
+#PBS -N generate_oi_sst 
 #PBS -M momoe.yoshida@my.jcu.edu.au
 #PBS -l walltime=24:00:00
-#PBS -l select=1:ncpus=2:mem=64gb
-#PBS -o /gpfs01/v2/Q9157/momoe/geo_polar_blended_sst/Linux_JCUHPC/blended_home/Logs/generate_oi_sst.log
+#PBS -l select=1:ncpus=1:mem=64gb
+
+set -euo pipefail
 
 cd $PBS_O_WORKDIR
+export SST_ENV=$PBS_O_WORKDIR
+
 # Add this to all of your scripts
 shopt -s expand_aliases
 source /etc/profile.d/modules.sh
@@ -18,22 +21,27 @@ echo "Job identifier is $PBS_JOBID"
 echo "Working directory is $PBS_O_WORKDIR"
 echo "Start time: $(date)"
 
+DAY_OF_YEAR_DECIMAL=$((10#$DAY_OF_YEAR))
+
 # Load the container we want to use
 # It is a good idea to always specify the version number 
 module purge
 module load matlab/2024a
-module load gcc/10.5.0
+#module load gcc/10.5.0
 
-# Run your code with useful debugging commands.
-# <<'EOF': send the following commands to MATLAB as input
-matlab -nodisplay -nosplash <<'EOF'
-clear mex
-dbstop if error
-dbmex on
+# Run your code
+#matlab -nodisplay -nosplash <<'EOF'
+#clear mex
+#dbstop if error
+#dbmex on
+#
+#generate_oi_input_data(2025,12,'all')
+#
+#exit
+#EOF
 
-generate_oi_sst(2025,012)
+matlab -batch "clear mex;
+generate_oi_sst(${YEAR},${DAY_OF_YEAR_DECIMAL})"
 
-exit
-EOF
 
 echo "End time: $(date)"
