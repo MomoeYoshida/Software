@@ -5,7 +5,8 @@
 #PBS -M momoe.yoshida@my.jcu.edu.au
 #PBS -l walltime=24:00:00
 #PBS -l select=1:ncpus=1:mem=64gb
-#PBS -o /gpfs01/v2/Q9157/momoe/geo_polar_blended_sst/Linux_JCUHPC/blended_home/Logs/generate_oi_input_data.log
+
+set -euo pipefail
 
 cd $PBS_O_WORKDIR
 export SST_ENV=$PBS_O_WORKDIR
@@ -20,21 +21,82 @@ echo "Job identifier is $PBS_JOBID"
 echo "Working directory is $PBS_O_WORKDIR"
 echo "Start time: $(date)"
 
+DAY_OF_YEAR_DECIMAL=$((10#$DAY_OF_YEAR))
+
 # Load the container we want to use
 # It is a good idea to always specify the version number 
 module purge
 module load matlab/2024a
-module load gcc/10.5.0
+#module load gcc/10.5.0 #not available anymore on JCU HPC
 
 # Run your code
-matlab -nodisplay -nosplash <<'EOF'
-clear mex
-dbstop if error
-dbmex on
+#matlab -nodisplay -nosplash <<'EOF'
+#clear mex
+#dbstop if error
+#dbmex on
+#
+#generate_oi_input_data(2025,12,'all')
+#
+#exit
+#EOF
 
-generate_oi_input_data(2025,12,'all')
+# -------------------------------------------------------------------------
+# Print variables passed by qsub
+# -------------------------------------------------------------------------
 
-exit
-EOF
+echo "YEAR=$YEAR"
+echo "DAY_OF_YEAR=$DAY_OF_YEAR"
+echo "DAY_OF_YEAR_DECIMAL=$DAY_OF_YEAR_DECIMAL"
+echo "SST_ENV=$SST_ENV"
+echo "Current directory=$(pwd)"
+
+# -------------------------------------------------------------------------
+# Diagnostic MATLAB command
+# -------------------------------------------------------------------------
+
+MATLAB_COMMAND="\
+global return_flag; \
+return_flag=1; \
+fprintf('MATLAB started\\n'); \
+fprintf('MATLAB version: %s\\n',version); \
+fprintf('MATLAB pwd: %s\\n',pwd); \
+fprintf('SST_ENV: %s\\n',getenv('SST_ENV')); \
+fprintf('Function location: %s\\n',which('generate_oi_input_data')); \
+fprintf('YEAR: %d\\n',${YEAR}); \
+fprintf('DAY_OF_YEAR: %d\\n',${DAY_OF_YEAR_DECIMAL}); \
+fprintf('return_flag before call: %g\\n',return_flag); \
+fprintf('Before clear mex\\n'); \
+clear mex; \
+fprintf('Calling generate_oi_input_data now\\n'); \
+generate_oi_input_data(${YEAR},${DAY_OF_YEAR_DECIMAL},'all'); \
+fprintf('generate_oi_input_data returned normally\\n'); \
+fprintf('return_flag after call: %g\\n',return_flag); \
+fprintf('MATLAB final checkpoint reached\\n');"
+
+echo "============================================================"
+echo "MATLAB command:"
+echo "$MATLAB_COMMAND"
+echo "============================================================"
+
+set +e
+
+matlab -batch "$MATLAB_COMMAND"
+MATLAB_EXIT_STATUS=$?
+
+set -e
+
+echo "============================================================"
+echo "MATLAB exit status: $MATLAB_EXIT_STATUS"
+echo "============================================================"
+
+if (( MATLAB_EXIT_STATUS != 0 )); then
+    echo "ERROR: MATLAB returned a nonzero exit status."
+    exit "$MATLAB_EXIT_STATUS"
+fi
+
+
+matlab -batch "clear mex;
+generate_oi_input_data(${YEAR},${DAY_OF_YEAR_DECIMAL},'all')"
+
 
 echo "End time: $(date)"
