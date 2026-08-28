@@ -150,7 +150,7 @@ end
 % In the actual analysis, only N20, MetOp-B&C and GOES-16 are analyzed to speed things up for testing/demonstration
 %
 
-ref_sst=sst_analysis; % usually, OSTIA of previous day
+ref_sst=sst_analysis; % previous day's analysed L4 SST
 
 % Process geostationary, polar-orbiting and RTG data
 
@@ -214,7 +214,7 @@ if (strcmpi(stream,'ostia') || strcmpi(stream,'all'))
 	res=1;
 	thin=5;
 %	process_raw_rtg(year, day, res, thin);
-	process_raw_ostia(year, day, res); % what is ostia_2025_011.mat used for??
+	process_raw_ostia(year, day, res); % what is ostia_2025_011.mat used for?? > input data for generate_oi_sst.m; thinned (e.g.,thin=5) ostia data
 end
 
 %if (strcmpi(stream,'amsr') || strcmpi(stream,'all'))
