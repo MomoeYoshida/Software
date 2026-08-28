@@ -247,7 +247,7 @@ full_obs=zeros(spatial_resolution); %[3600,7200]
 % FOR each number in the list (the list of numbers corresponding to input L3C data):
 %for i=dataset_ids % Momoe
 
-for i=1:n_datasets
+for i=1:n_datasets % thinned ostia: 001
     % n_datasets control the # of input satellite data
    % For each input satellite data.
    data_string=num2str_pad_zeros(i,3);
@@ -321,7 +321,7 @@ for i=1:n_datasets
    % e.g., process_raw_goes_c.m call max functions (.c: efficient code) -> /andy.harris/for_me/blended/blended_home/C_code/c_code_andy5/
    % why the bias added -> apply the bias correction
 
-   % bias: the estimated bias correction for that sensor at that
+   % bias: the estimated bias correction for that sensor at that, always 0 for ostia right(bias-free reference)?
    % time/location
    % sst_analysis: the background/reference/previous day's (yesterday's)
    % field/sst
@@ -513,6 +513,8 @@ message2(['*** DEBUG041'])
 % dense/sparse observation/data region â†’ small/large correlation length (lmin/lmax)
 % [3600,7200]; each grid cell gets a value between lmin and lmax
 correlation_map=get_cmap(full_obs,8,32); % full_obs: a binary mask (1=valid obs and 0=no/bad data)
+%correlation_map=get_cmap(full_obs,oi_corr_parm_001(1),oi_corr_parm_001(3)) % replace 8 and 32 with oi_corr_parm_001(1) and oi_corr_parm_001(3)? ANDY
+% may be not ¿ any particular purpose?
 clear full_obs
 
 % correlation_map: the correlation_map of yesterday line117
