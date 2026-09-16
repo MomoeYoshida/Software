@@ -15,6 +15,10 @@ export SST_ENV=$PBS_O_WORKDIR
 shopt -s expand_aliases
 source /etc/profile.d/modules.sh
 
+# Make the libraries visible on the compute node.
+export LD_LIBRARY_PATH="/gpfs01/sw/matlab/R2024a/bin/glnxa64:${LD_LIBRARY_PATH:-}"
+echo "LD_LIBRARY_PATH=$LD_LIBRARY_PATH"
+
 # Output some useful information about
 # the job we are running
 echo "Job identifier is $PBS_JOBID"
