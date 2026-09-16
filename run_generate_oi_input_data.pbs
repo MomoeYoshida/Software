@@ -15,7 +15,7 @@ export SST_ENV=$PBS_O_WORKDIR
 shopt -s expand_aliases
 source /etc/profile.d/modules.sh
 
-# Make the libraries visible on the compute node.
+# Make the libraries visible on the compute node
 export LD_LIBRARY_PATH="/gpfs01/sw/matlab/R2024a/bin/glnxa64:${LD_LIBRARY_PATH:-}"
 echo "LD_LIBRARY_PATH=$LD_LIBRARY_PATH"
 
@@ -72,7 +72,7 @@ fprintf('return_flag before call: %g\\n',return_flag); \
 fprintf('Before clear mex\\n'); \
 clear mex; \
 fprintf('Calling generate_oi_input_data now\\n'); \
-generate_oi_input_data(${YEAR},${DAY_OF_YEAR_DECIMAL},'all'); \
+return_flag=generate_oi_input_data(${YEAR},${DAY_OF_YEAR_DECIMAL},'all'); \
 fprintf('generate_oi_input_data returned normally\\n'); \
 fprintf('return_flag after call: %g\\n',return_flag); \
 fprintf('MATLAB final checkpoint reached\\n');"
@@ -99,8 +99,5 @@ if (( MATLAB_EXIT_STATUS != 0 )); then
 fi
 
 
-matlab -batch "clear mex;
-generate_oi_input_data(${YEAR},${DAY_OF_YEAR_DECIMAL},'all')"
-
-
+echo "generate_oi_input_data completed successfully."
 echo "End time: $(date)"
