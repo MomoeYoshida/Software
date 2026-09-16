@@ -14,7 +14,7 @@
 #
 # Workflow:
 #
-#   1. Check the preceding day's SST analysis and SST variability files.
+#   1. Check the preceding day's SST analysis and SST variability and SST bias files.
 #
 #      If either file is missing:
 #        a. Download OSTIA for the preceding day and preceding ten days.
@@ -195,11 +195,13 @@ analysis_outputs_exist()
 
     local analysis_file
     local variability_file
+    local bias_file
 
     analysis_file="${ANALYSIS_DIR}/sst_analysis_${year}_${doy3}.mat"
     variability_file="${ANALYSIS_DIR}/sst_variability_${year}_${doy3}.mat"
+    bias_file="${ANALYSIS_DIR}/sst_biases_${year}_${doy3}.mat"
 
-    [[ -f "$analysis_file" && -f "$variability_file" ]]
+    [[ -f "$analysis_file" && -f "$variability_file" && -f "$bias_file" ]]
 }
 
 
@@ -387,6 +389,7 @@ PREVIOUS_DAY_OF_YEAR=$(get_doy_integer "$PREVIOUS_DATE")
 
 PREVIOUS_ANALYSIS_FILE="${ANALYSIS_DIR}/sst_analysis_${PREVIOUS_YEAR}_${PREVIOUS_DOY3}.mat"
 PREVIOUS_VARIABILITY_FILE="${ANALYSIS_DIR}/sst_variability_${PREVIOUS_YEAR}_${PREVIOUS_DOY3}.mat"
+PREVIOUS_BIAS_FILE="${ANALYSIS_DIR}/sst_biases_${PREVIOUS_YEAR}_${PREVIOUS_DOY3}.mat"
 
 # TAR_DATE passed to download_podaac_ostiadata.pbs.
 #
@@ -424,26 +427,29 @@ echo "Analysis file:"
 echo "  $PREVIOUS_ANALYSIS_FILE"
 echo "Variability file:"
 echo "  $PREVIOUS_VARIABILITY_FILE"
+echo "Bias file:"
+echo "  $PREVIOUS_BIAS_FILE"
 
 if analysis_outputs_exist "$PREVIOUS_YEAR" "$PREVIOUS_DOY3"; then
 
     echo
-    echo "Both preceding-day files already exist."
+    echo "All preceding-day files already exist."
     echo "OSTIA download and initial bias creation will be skipped."
 
     {
         echo "Preceding-day initialization"
         echo "Status: skipped"
-        echo "Reason: both required preceding-day files exist"
+        echo "Reason: all required preceding-day files exist"
         echo "Analysis file: $PREVIOUS_ANALYSIS_FILE"
         echo "Variability file: $PREVIOUS_VARIABILITY_FILE"
-        echo
+        echo "Bias file: $PREVIOUS_BIAS_FILE"
+	echo
     } >> "$WORKFLOW_RECORD"
 
 else
 
     echo
-    echo "One or both preceding-day files are missing."
+    echo "One or all preceding-day files are missing."
     echo "Submitting the OSTIA initialization chain."
 
     # -------------------------------------------------------------------------
