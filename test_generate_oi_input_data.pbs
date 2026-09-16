@@ -1,0 +1,82 @@
+#!/bin/bash
+#PBS -j oe
+#PBS -m ae
+#PBS -N test_generate_oi_input
+#PBS -M momoe.yoshida@my.jcu.edu.au
+#PBS -l walltime=24:00:00
+#PBS -l select=1:ncpus=1:mem=64gb
+#PBS -o /gpfs01/v2/Q9157/momoe/geo_polar_blended_sst/Linux_JCUHPC/blended_home/Logs/test_generate_oi_input.log
+
+set -euo pipefail
+
+cd "$PBS_O_WORKDIR"
+export SST_ENV="$PBS_O_WORKDIR"
+
+shopt -s expand_aliases
+source /etc/profile.d/modules.sh
+
+module purge
+module load matlab/2024a
+
+# Make the libraries visible on the compute node.
+export LD_LIBRARY_PATH="/gpfs01/sw/matlab/R2024a/bin/glnxa64:${LD_LIBRARY_PATH:-}"
+echo "LD_LIBRARY_PATH=$LD_LIBRARY_PATH"
+
+# Test date
+YEAR=2025
+DAY_OF_YEAR=120
+STREAM="all"
+
+MEX_FILE="${PBS_O_WORKDIR}/process_raw_geo_mex.mexa64"
+
+echo "============================================================"
+echo "Testing generate_oi_input_data"
+echo "============================================================"
+echo "PBS job ID       : $PBS_JOBID"
+echo "Compute node     : $(hostname)"
+echo "Working directory: $(pwd)"
+echo "SST_ENV          : $SST_ENV"
+echo "Year             : $YEAR"
+echo "Day of year      : $DAY_OF_YEAR"
+echo "Stream           : $STREAM"
+echo "Start time       : $(date)"
+echo "============================================================"
+
+echo "Checking MEX dependencies:"
+
+if [[ ! -f "$MEX_FILE" ]]; then
+    echo "ERROR: MEX file not found:"
+    echo "  $MEX_FILE"
+    exit 1
+fi
+
+ldd "$MEX_FILE"
+
+if ldd "$MEX_FILE" | grep -q "not found"; then
+    echo "ERROR: The MEX file still has unresolved libraries:"
+    ldd "$MEX_FILE" | grep "not found"
+    exit 1
+fi
+
+echo "All MEX dependencies are resolved."
+
+matlab -batch "\
+fprintf('MATLAB started successfully\n'); \
+fprintf('MATLAB working directory: %s\n',pwd); \
+fprintf('MEX file location: %s\n',which('process_raw_geo_mex')); \
+fprintf('Starting generate_oi_input_data(%d,%d,''%s'')\n',${YEAR},${DAY_OF_YEAR},'${STREAM}'); \
+timer_value=tic; \
+return_flag=generate_oi_input_data(${YEAR},${DAY_OF_YEAR},'${STREAM}'); \
+fprintf('generate_oi_input_data returned after %.2f minutes\n',toc(timer_value)/60); \
+fprintf('return_flag = %g\n',return_flag); \
+assert(return_flag==1,'generate_oi_input_data returned an unsuccessful status'); \
+fprintf('Test completed successfully\n');"
+
+MATLAB_STATUS=$?
+
+echo "============================================================"
+echo "MATLAB exit status: $MATLAB_STATUS"
+echo "End time          : $(date)"
+echo "============================================================"
+
+exit "$MATLAB_STATUS"
