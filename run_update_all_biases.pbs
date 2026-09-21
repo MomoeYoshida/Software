@@ -29,19 +29,18 @@ module purge
 module load matlab/2024a
 #module load gcc/10.5.0
 
-# Run your code
-#matlab -nodisplay -nosplash <<'EOF'
-#clear mex
-#dbstop if error
-#dbmex on
-#
-#generate_oi_input_data(2025,12,'all')
-#
-#exit
-#EOF
+: "${DIRECTION:=1}"
 
-matlab -batch "clear mex;
-update_all_biases(${YEAR},${DAY_OF_YEAR_DECIMAL})"
-
+matlab -batch "\
+fprintf('MATLAB started\n'); \
+fprintf('Before clear mex\n'); \
+clear mex; \
+fprintf('After clear mex\n'); \
+fprintf('Calling update_all_biases(%d,%d,%d)\n', \
+    ${YEAR},${DAY_OF_YEAR_DECIMAL},${DIRECTION}); \
+drawnow; \
+update_all_biases(${YEAR},${DAY_OF_YEAR_DECIMAL},${DIRECTION}); \
+fprintf('update_all_biases returned normally\n'); \
+drawnow;"
 
 echo "End time: $(date)"
