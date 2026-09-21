@@ -3,8 +3,8 @@
 #PBS -m ae
 #PBS -N DownloadPODAACData
 #PBS -M momoe.yoshida@my.jcu.edu.au
-#PBS -l walltime=48:00:00
-#PBS -l select=1:ncpus=2:mem=64gb
+#PBS -l walltime=02:00:00
+#PBS -l select=1:ncpus=2:mem=24gb
 
 set -e # stop script if any error occurs
 
