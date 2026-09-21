@@ -12,7 +12,7 @@
 # Example:
 #   ./submit_make_op_sst_workflow.sh 2016-11-01
 #
-# Workflow:
+# Workflow: TNT: Need to update!!
 #
 #   1. Check the preceding day's SST analysis and SST variability and SST bias files.
 #
@@ -68,7 +68,6 @@ NUMBER_OF_DAYS=1
 # MATLAB processing settings
 # -----------------------------------------------------------------------------
 
-STREAM="nrt" # not used
 DIRECTION=1
 
 # -----------------------------------------------------------------------------
@@ -78,7 +77,10 @@ DIRECTION=1
 # -----------------------------------------------------------------------------
 
 PBS_DOWNLOAD_OSTIA="${SOFTWARE_DIR}/download_podaac_ostiadata.pbs"
-PBS_INIT_OSTIA_BIASES="${SOFTWARE_DIR}/run_init_ostia_biases.pbs"
+#PBS_INIT_OSTIA_BIASES="${SOFTWARE_DIR}/run_init_ostia_biases.pbs"
+PBS_INIT_OSTIA="${SOFTWARE_DIR}/run_init_ostia.pbs"
+PBS_INIT_BIASES="${SOFTWARE_DIR}/run_init_biases.pbs"
+
 
 PBS_DOWNLOAD_L2P="${SOFTWARE_DIR}/download_podaac_l2pdata.pbs"
 GEO_NAV_SUBMIT_SCRIPT="${SOFTWARE_DIR}/submit_batch_geo_nav_single_jobs.sh"
@@ -187,23 +189,74 @@ get_doy_integer()
     echo $((10#$doy3))
 }
 
+ostia_data_exist()
+{
+    local first_date="$1"
+    local target_date="$2"
 
-analysis_outputs_exist()
+    local current_date
+    local compact_date
+
+    current_date="$first_date"
+
+    while [[ "$current_date" < "$target_date" ]] ||
+          [[ "$current_date" == "$target_date" ]]; do
+
+        compact_date=$(
+            date --utc \
+                --date="${current_date}T00:00:00Z" \
+                "+%Y%m%d"
+        )
+
+        # Search recursively for at least one non-empty OSTIA file
+        # containing the calendar date in its filename.
+        if ! find "${DATA_DIR}/OSTIA" \
+            -type f \
+            -name "*${compact_date}*" \
+            -size +0c \
+            -print -quit 2>/dev/null |
+            grep -q .; then
+
+            echo "Missing OSTIA data for ${current_date}" >&2
+            return 1
+        fi
+
+        current_date=$(
+            date --utc \
+                --date="${current_date}T00:00:00Z +1 day" \
+                "+%Y-%m-%d"
+        )
+    done
+
+    return 0
+}
+
+preceding_sst_files_exist()
 {
     local year="$1"
     local doy3="$2"
 
     local analysis_file
     local variability_file
-    local bias_file
 
     analysis_file="${ANALYSIS_DIR}/sst_analysis_${year}_${doy3}.mat"
     variability_file="${ANALYSIS_DIR}/sst_variability_${year}_${doy3}.mat"
-    bias_file="${ANALYSIS_DIR}/sst_biases_${year}_${doy3}.mat"
 
-    [[ -f "$analysis_file" && -f "$variability_file" && -f "$bias_file" ]]
+    [[ -s "$analysis_file" && -s "$variability_file" ]]
 }
 
+
+preceding_bias_file_exists()
+{
+    local year="$1"
+    local doy3="$2"
+
+    local bias_file
+
+    bias_file="${ANALYSIS_DIR}/sst_biases_${year}_${doy3}.mat"
+
+    [[ -s "$bias_file" ]]
+}
 
 l3c_data_exist()
 {
@@ -341,7 +394,9 @@ mkdir -p "$ANALYSIS_DIR"
 mkdir -p "$L3C_DIR"
 
 check_required_file "$PBS_DOWNLOAD_OSTIA"
-check_required_file "$PBS_INIT_OSTIA_BIASES"
+#check_required_file "$PBS_INIT_OSTIA_BIASES"
+check_required_file "$PBS_INIT_OSTIA"
+check_required_file "$PBS_INIT_BIASES"
 check_required_file "$PBS_DOWNLOAD_L2P"
 check_required_file "$PBS_GENERATE_OI_INPUT"
 check_required_file "$PBS_DELETE_L2P"
@@ -366,8 +421,7 @@ WORKFLOW_RECORD="${LOG_DIR}/make_op_sst_workflow_${START_DATE}_${SUBMISSION_TIME
     echo "Submission host : $(hostname)"
     echo "Submitted by    : ${USER:-unknown}"
     echo "Start date      : $START_DATE"
-    echo "Number of days  : $NUMBER_OF_DAYS"
-    echo "Stream          : $STREAM"
+    echo "Number of days  : $NUMBER_OF_DAYS" 
     echo "Direction       : $DIRECTION"
     echo "============================================================"
     echo
@@ -382,6 +436,14 @@ PREVIOUS_DATE=$(
         --date="${START_DATE}T00:00:00Z -1 day" \
         "+%Y-%m-%d"
 )
+OSTIA_FIRST_DATE=$(
+    date --utc \
+        --date="${PREVIOUS_DATE}T00:00:00Z -10 days" \
+        "+%Y-%m-%d"
+)
+
+OSTIA_TARGET_DATE="${PREVIOUS_DATE}T00:00:00Z"
+OSTIA_DIR="${DATA_DIR}/OSTIA"
 
 PREVIOUS_YEAR=$(get_year "$PREVIOUS_DATE")
 PREVIOUS_DOY3=$(get_doy3 "$PREVIOUS_DATE")
@@ -390,13 +452,6 @@ PREVIOUS_DAY_OF_YEAR=$(get_doy_integer "$PREVIOUS_DATE")
 PREVIOUS_ANALYSIS_FILE="${ANALYSIS_DIR}/sst_analysis_${PREVIOUS_YEAR}_${PREVIOUS_DOY3}.mat"
 PREVIOUS_VARIABILITY_FILE="${ANALYSIS_DIR}/sst_variability_${PREVIOUS_YEAR}_${PREVIOUS_DOY3}.mat"
 PREVIOUS_BIAS_FILE="${ANALYSIS_DIR}/sst_biases_${PREVIOUS_YEAR}_${PREVIOUS_DOY3}.mat"
-
-# TAR_DATE passed to download_podaac_ostiadata.pbs.
-#
-# The PBS job calculates:
-#   PREV_DATE = TAR_DATE minus 10 days
-#   END_DATE  = TAR_DATE plus 1 day
-OSTIA_TARGET_DATE="${PREVIOUS_DATE}T00:00:00Z"
 
 echo "============================================================"
 echo "Submitting make_op_sst workflow"
@@ -407,54 +462,59 @@ echo "Previous year            : $PREVIOUS_YEAR"
 echo "Previous day of year     : $PREVIOUS_DAY_OF_YEAR"
 echo "Previous day-of-year DDD : $PREVIOUS_DOY3"
 echo "Number of analysis days  : $NUMBER_OF_DAYS"
-echo "Stream                   : $STREAM"
 echo "Direction                : $DIRECTION"
 echo "Workflow record          : $WORKFLOW_RECORD"
 echo "============================================================"
 
-# LAST_JOB_ID is the job that must finish before the next stage can start.
-LAST_JOB_ID=""
-
 # =============================================================================
-# 7. Step 1: Initialize preceding-day OSTIA files and biases when needed
+# 7. Step 1: Prepare preceding-day OSTIA, SST fields and bias fields
 # =============================================================================
 
 echo
 echo "============================================================"
-echo "Step 1: Check preceding-day SST files"
+echo "Step 1: Check preceding-day initialisation files"
 echo "============================================================"
+echo "Previous date:"
+echo "  $PREVIOUS_DATE"
+echo "OSTIA directory:"
+echo "  $OSTIA_DIR"
+echo "OSTIA period:"
+echo "  $OSTIA_FIRST_DATE through $PREVIOUS_DATE"
 echo "Analysis file:"
 echo "  $PREVIOUS_ANALYSIS_FILE"
 echo "Variability file:"
 echo "  $PREVIOUS_VARIABILITY_FILE"
 echo "Bias file:"
 echo "  $PREVIOUS_BIAS_FILE"
+echo "============================================================"
 
-if analysis_outputs_exist "$PREVIOUS_YEAR" "$PREVIOUS_DOY3"; then
+# LAST_JOB_ID remains empty when no initialisation job is required.
+LAST_JOB_ID=""
 
-    echo
-    echo "All preceding-day files already exist."
-    echo "OSTIA download and initial bias creation will be skipped."
+# -----------------------------------------------------------------------------
+# Step 1.1: Download OSTIA only when required files are missing
+# -----------------------------------------------------------------------------
+
+echo
+echo "Checking OSTIA files..."
+
+if ostia_data_exist "$OSTIA_FIRST_DATE" "$PREVIOUS_DATE"; then
+
+    echo "All required OSTIA files already exist."
+    echo "OSTIA download will be skipped."
 
     {
-        echo "Preceding-day initialization"
-        echo "Status: skipped"
-        echo "Reason: all required preceding-day files exist"
-        echo "Analysis file: $PREVIOUS_ANALYSIS_FILE"
-        echo "Variability file: $PREVIOUS_VARIABILITY_FILE"
-        echo "Bias file: $PREVIOUS_BIAS_FILE"
-	echo
+        echo "Preceding-day preparation"
+        echo "OSTIA download: skipped"
+        echo "Reason: required OSTIA files already exist"
+        echo "OSTIA period: $OSTIA_FIRST_DATE through $PREVIOUS_DATE"
+        echo
     } >> "$WORKFLOW_RECORD"
 
 else
 
-    echo
-    echo "One or all preceding-day files are missing."
-    echo "Submitting the OSTIA initialization chain."
-
-    # -------------------------------------------------------------------------
-    # Step 1.1: Download OSTIA
-    # -------------------------------------------------------------------------
+    echo "One or more required OSTIA files are missing."
+    echo "Submitting OSTIA download."
 
     OSTIA_LOG="${LOG_DIR}/download_ostia_${PREVIOUS_DATE}.log"
 
@@ -474,33 +534,110 @@ else
         "Download OSTIA" \
         "$JOB_DOWNLOAD_OSTIA"
 
-    # -------------------------------------------------------------------------
-    # Step 1.2: Run init_files_OSTIA.m and init_all_biases.m
-    # -------------------------------------------------------------------------
+    LAST_JOB_ID="$JOB_DOWNLOAD_OSTIA"
 
-    INIT_OSTIA_LOG="${LOG_DIR}/init_ostia_biases_${PREVIOUS_DATE}.log"
+fi
 
-    JOB_INIT_OSTIA_BIASES=$(
-        submit_afterok "$JOB_DOWNLOAD_OSTIA" \
+# -----------------------------------------------------------------------------
+# Step 1.2: Run init_files_OSTIA only when SST analysis or variability is missing
+# -----------------------------------------------------------------------------
+
+echo
+echo "Checking preceding-day SST analysis and variability files..."
+
+if preceding_sst_files_exist "$PREVIOUS_YEAR" "$PREVIOUS_DOY3"; then
+
+    echo "The preceding-day SST analysis and variability files exist."
+    echo "init_files_OSTIA will be skipped."
+
+    {
+        echo "init_files_OSTIA: skipped"
+        echo "Reason: analysis and variability files already exist"
+        echo "Analysis file: $PREVIOUS_ANALYSIS_FILE"
+        echo "Variability file: $PREVIOUS_VARIABILITY_FILE"
+        echo
+    } >> "$WORKFLOW_RECORD"
+
+else
+
+    echo "The preceding-day SST analysis or variability file is missing."
+    echo "Submitting init_files_OSTIA."
+
+    INIT_OSTIA_LOG="${LOG_DIR}/init_ostia_${PREVIOUS_DATE}.log"
+
+    JOB_INIT_OSTIA=$(
+        submit_with_optional_dependency "$LAST_JOB_ID" \
             -o "$INIT_OSTIA_LOG" \
             -v YEAR="$PREVIOUS_YEAR",DAY_OF_YEAR="$PREVIOUS_DAY_OF_YEAR" \
-            "$PBS_INIT_OSTIA_BIASES"
+            "$PBS_INIT_OSTIA"
     )
 
     print_job \
-        "Initialize OSTIA/biases" \
-        "$JOB_INIT_OSTIA_BIASES" \
-        "$JOB_DOWNLOAD_OSTIA"
+        "Initialise OSTIA SST fields" \
+        "$JOB_INIT_OSTIA" \
+        "${LAST_JOB_ID:-none}"
 
     record_job \
         "$PREVIOUS_DATE" \
-        "Initialize OSTIA and biases" \
-        "$JOB_INIT_OSTIA_BIASES" \
-        "$JOB_DOWNLOAD_OSTIA"
+        "Initialise OSTIA SST fields" \
+        "$JOB_INIT_OSTIA" \
+        "${LAST_JOB_ID:-none}"
 
-    LAST_JOB_ID="$JOB_INIT_OSTIA_BIASES"
+    LAST_JOB_ID="$JOB_INIT_OSTIA"
 
 fi
+
+# -----------------------------------------------------------------------------
+# Step 1.3: Run init_all_biases only when the bias file is missing
+# -----------------------------------------------------------------------------
+
+echo
+echo "Checking preceding-day SST bias file..."
+
+if preceding_bias_file_exists "$PREVIOUS_YEAR" "$PREVIOUS_DOY3"; then
+
+    echo "The preceding-day SST bias file exists."
+    echo "init_all_biases will be skipped."
+
+    {
+        echo "init_all_biases: skipped"
+        echo "Reason: bias file already exists"
+        echo "Bias file: $PREVIOUS_BIAS_FILE"
+        echo
+    } >> "$WORKFLOW_RECORD"
+
+else
+
+    echo "The preceding-day SST bias file is missing."
+    echo "Submitting init_all_biases."
+
+    INIT_BIASES_LOG="${LOG_DIR}/init_biases_${PREVIOUS_DATE}.log"
+
+    JOB_INIT_BIASES=$(
+        submit_with_optional_dependency "$LAST_JOB_ID" \
+            -o "$INIT_BIASES_LOG" \
+            -v YEAR="$PREVIOUS_YEAR",DAY_OF_YEAR="$PREVIOUS_DAY_OF_YEAR" \
+            "$PBS_INIT_BIASES"
+    )
+
+    print_job \
+        "Initialise bias fields" \
+        "$JOB_INIT_BIASES" \
+        "${LAST_JOB_ID:-none}"
+
+    record_job \
+        "$PREVIOUS_DATE" \
+        "Initialise bias fields" \
+        "$JOB_INIT_BIASES" \
+        "${LAST_JOB_ID:-none}"
+
+    LAST_JOB_ID="$JOB_INIT_BIASES"
+
+fi
+
+echo
+echo "Preceding-day preparation submitted successfully."
+echo "Last initialisation job: ${LAST_JOB_ID:-none}"
 
 # =============================================================================
 # 8. Process each analysis date
@@ -650,7 +787,7 @@ for ((day_offset = 0; day_offset < NUMBER_OF_DAYS; day_offset++)); do
 	JOB_GENERATE_OI_INPUT=$(
 	submit_with_optional_dependency "$LAST_JOB_ID" \
 	    -o "$GENERATE_INPUT_LOG" \
-	    -v YEAR="$YEAR",DAY_OF_YEAR="$DAY_OF_YEAR",STREAM="$STREAM" \
+	    -v YEAR="$YEAR",DAY_OF_YEAR="$DAY_OF_YEAR" \
 	    "$PBS_GENERATE_OI_INPUT"
 	)
 
@@ -728,11 +865,11 @@ for ((day_offset = 0; day_offset < NUMBER_OF_DAYS; day_offset++)); do
     UPDATE_BIASES_LOG="${LOG_DIR}/update_all_biases_${ANALYSIS_DATE}.log"
 
     JOB_UPDATE_ALL_BIASES=$(
-        submit_afterok "$LAST_JOB_ID" \
-            -o "$UPDATE_BIASES_LOG" \
-            -v YEAR="$YEAR",DAY_OF_YEAR="$DAY_OF_YEAR",DIRECTION="$DIRECTION" \
-            "$PBS_UPDATE_ALL_BIASES"
-    )
+    submit_with_optional_dependency "$LAST_JOB_ID" \
+        -o "$UPDATE_BIASES_LOG" \
+        -v YEAR="$YEAR",DAY_OF_YEAR="$DAY_OF_YEAR",DIRECTION="$DIRECTION" \
+        "$PBS_UPDATE_ALL_BIASES"
+) 
 
     print_job \
         "Update all biases" \
