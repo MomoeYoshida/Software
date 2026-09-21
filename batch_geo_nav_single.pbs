@@ -2,8 +2,8 @@
 #PBS -j oe
 #PBS -m ae
 #PBS -M momoe.yoshida@my.jcu.edu.au
-#PBS -l walltime=72:00:00
-#PBS -l select=1:ncpus=1:mem=64gb
+#PBS -l walltime=01:00:00
+#PBS -l select=1:ncpus=1:mem=8gb
 #PBS -N batch_geo_nav_single
 
 cd $PBS_O_WORKDIR
