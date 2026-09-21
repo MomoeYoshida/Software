@@ -1,0 +1,81 @@
+#!/bin/bash
+#PBS -j oe
+#PBS -m ae
+#PBS -N initOSTIA
+#PBS -M momoe.yoshida@my.jcu.edu.au
+#PBS -l walltime=24:00:00
+#PBS -l select=1:ncpus=1:mem=64gb
+
+set -euo pipefail
+
+# -----------------------------------------------------------------------------
+# Validate PBS variables
+# -----------------------------------------------------------------------------
+
+: "${PBS_O_WORKDIR:?ERROR: PBS_O_WORKDIR is unavailable}"
+: "${YEAR:?ERROR: YEAR was not supplied}"
+: "${DAY_OF_YEAR:?ERROR: DAY_OF_YEAR was not supplied}"
+
+if [[ ! "$YEAR" =~ ^[0-9]{4}$ ]]; then
+    echo "ERROR: YEAR must contain four digits."
+    echo "Received: $YEAR"
+    exit 1
+fi
+
+if [[ ! "$DAY_OF_YEAR" =~ ^[0-9]{1,3}$ ]]; then
+    echo "ERROR: DAY_OF_YEAR must be between 1 and 366."
+    echo "Received: $DAY_OF_YEAR"
+    exit 1
+fi
+
+DAY_OF_YEAR_DECIMAL=$((10#$DAY_OF_YEAR))
+
+if (( DAY_OF_YEAR_DECIMAL < 1 || DAY_OF_YEAR_DECIMAL > 366 )); then
+    echo "ERROR: DAY_OF_YEAR is outside the valid range."
+    echo "Received: $DAY_OF_YEAR"
+    exit 1
+fi
+
+# -----------------------------------------------------------------------------
+# Working environment
+# -----------------------------------------------------------------------------
+
+cd "$PBS_O_WORKDIR"
+export SST_ENV="$PBS_O_WORKDIR"
+
+shopt -s expand_aliases
+source /etc/profile.d/modules.sh
+
+module purge
+module load matlab/2024a
+
+# -----------------------------------------------------------------------------
+# Job information
+# -----------------------------------------------------------------------------
+
+echo "============================================================"
+echo "Running init_files_OSTIA"
+echo "============================================================"
+echo "PBS job ID       : ${PBS_JOBID:-unknown}"
+echo "Compute host     : $(hostname)"
+echo "Working directory: $(pwd)"
+echo "SST_ENV          : $SST_ENV"
+echo "Year             : $YEAR"
+echo "Day of year      : $DAY_OF_YEAR_DECIMAL"
+echo "Start time       : $(date)"
+echo "============================================================"
+
+# -----------------------------------------------------------------------------
+# Run MATLAB
+# -----------------------------------------------------------------------------
+
+matlab -batch "\
+fprintf('Starting init_files_OSTIA(%d,%d)\\n', \
+    ${YEAR},${DAY_OF_YEAR_DECIMAL}); \
+init_files_OSTIA(${YEAR},${DAY_OF_YEAR_DECIMAL}); \
+fprintf('init_files_OSTIA completed successfully\\n');"
+
+echo "============================================================"
+echo "init_files_OSTIA PBS job completed."
+echo "End time: $(date)"
+echo "============================================================"
