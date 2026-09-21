@@ -58,8 +58,17 @@ module load matlab/2024a
 #exit
 #EOF
 
-matlab -batch "init_files_OSTIA(${YEAR},${DAY_OF_YEAR_DECIMAL});
-init_all_biases(${YEAR},${DAY_OF_YEAR_DECIMAL});"
+#matlab -batch "init_files_OSTIA(${YEAR},${DAY_OF_YEAR_DECIMAL});
+#init_all_biases(${YEAR},${DAY_OF_YEAR_DECIMAL});"
+
+# Debug to check whether MATLAB actually reaches init_all_biases.
+matlab -batch "fprintf('Starting init_files_OSTIA\n');
+init_files_OSTIA(${YEAR},${DAY_OF_YEAR_DECIMAL});
+fprintf('init_files_OSTIA finished\n');
+fprintf('Starting init_all_biases\n');
+init_all_biases(${YEAR},${DAY_OF_YEAR_DECIMAL});
+fprintf('init_all_biases finished\n');"
+
 
 echo "OSTIA and bias initialisation completed successfully."
 echo "End time: $(date)"
