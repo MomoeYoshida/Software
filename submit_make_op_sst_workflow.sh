@@ -7,10 +7,10 @@
 #   Submit the complete daily operational SST workflow.
 #
 # Required command:
-#   ./submit_make_op_sst_workflow.sh YYYY-MM-DD
+#   ./submit_make_op_sst_workflow.sh YYYY-MM-DD(START_DATE) NUMBER_OF_DAYS
 #
 # Example:
-#   ./submit_make_op_sst_workflow.sh 2016-11-01
+#   ./submit_make_op_sst_workflow.sh 2016-11-01 5 # process five consecutive days
 #
 # Workflow: TNT: Need to update!!
 #
@@ -56,15 +56,6 @@ L3C_DIR="${BASE_DIR}/Input_ssts"
 LOG_DIR="${BASE_DIR}/Logs"
 
 # -----------------------------------------------------------------------------
-# Number of consecutive analysis days
-#
-# You only need to enter the start date on the command line.
-# Change this setting when you want to process multiple consecutive days.
-# -----------------------------------------------------------------------------
-
-NUMBER_OF_DAYS=1
-
-# -----------------------------------------------------------------------------
 # MATLAB processing settings
 # -----------------------------------------------------------------------------
 
@@ -98,10 +89,18 @@ print_usage()
 {
     cat <<EOF
 Usage:
-  $0 YYYY-MM-DD
+  $0 START_DATE NUMBER_OF_DAYS
 
-Example:
-  $0 2016-11-01
+Arguments:
+  START_DATE       First analysis date in YYYY-MM-DD format
+  NUMBER_OF_DAYS   Number of consecutive analysis days to submit
+
+Examples:
+  Process one day:
+    $0 2016-11-01 1
+
+  Process five consecutive days:
+    $0 2016-11-01 5
 EOF
 }
 
@@ -364,17 +363,18 @@ record_job()
 # 3. Validate the command-line argument
 # =============================================================================
 
-if [[ $# -ne 1 ]]; then
+if [[ $# -ne 2 ]]; then
     print_usage
     exit 1
 fi
 
 START_DATE="$1"
+NUMBER_OF_DAYS="$2"
 
 validate_date "$START_DATE"
 
 if ! [[ "$NUMBER_OF_DAYS" =~ ^[1-9][0-9]*$ ]]; then
-    fail "NUMBER_OF_DAYS must be a positive integer."
+    fail "NUMBER_OF_DAYS must be a positive integer. Received: $NUMBER_OF_DAYS"
 fi
 
 if ! [[ "$DIRECTION" =~ ^-?[0-9]+$ ]]; then
