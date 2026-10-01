@@ -260,24 +260,33 @@ preceding_bias_file_exists()
 l3c_data_exist()
 {
     local analysis_date="$1"
-    local date_compact
+    local year
+    local doy3
 
-    date_compact=$(
-        date --utc \
-            --date="${analysis_date}T00:00:00Z" \
-            "+%Y%m%d"
-    )
+    year=$(get_year "$analysis_date")
+    doy3=$(get_doy3 "$analysis_date")
 
-    # Search recursively because L3C files may be stored in subdirectories.
-    #
-    # Adjust this filename test if your L3C filenames do not contain YYYYMMDD.
+    echo "Checking L3C directory: $L3C_DIR" >&2
+    echo "Checking L3C pattern  : *_${year}_${doy3}.mat" >&2
+
     find "$L3C_DIR" \
         -type f \
-        -name "*${date_compact}*" \
+        -name "*_${year}_${doy3}.mat" \
+        -size +0c \
         -print -quit 2>/dev/null |
         grep -q .
 }
 
+ostia_twentieth_exists()
+{
+    local year="$1"
+    local doy3="$2"
+    local ostia_file
+
+    ostia_file="${ANALYSIS_DIR}/ostia_twentieth_${year}_${doy3}.mat"
+
+    [[ -s "$ostia_file" ]]
+}
 
 submit_job()
 {
@@ -348,14 +357,12 @@ record_job()
     local stage_name="$2"
     local job_id="$3"
     local dependency="${4:-none}"
-
-    {
-        echo "Analysis date: $analysis_date"
-        echo "Stage: $stage_name"
-        echo "Job ID: $job_id"
-        echo "Dependency: $dependency"
-        echo
-    } >> "$WORKFLOW_RECORD"
+    
+    echo "Analysis date: $analysis_date"
+    echo "Stage: $stage_name"
+    echo "Job ID: $job_id"
+    echo "Dependency: $dependency"
+    echo 
 }
 
 
@@ -426,6 +433,12 @@ WORKFLOW_RECORD="${LOG_DIR}/make_op_sst_workflow_${START_DATE}_${SUBMISSION_TIME
     echo "============================================================"
     echo
 } > "$WORKFLOW_RECORD"
+
+# =============================================================================
+# Send all subsequent stdout and stderr to both the terminal and workflow record
+# =============================================================================
+
+exec > >(tee -a "$WORKFLOW_RECORD") 2>&1
 
 # =============================================================================
 # 6. Calculate the day before the analysis start date
@@ -502,14 +515,11 @@ if ostia_data_exist "$OSTIA_FIRST_DATE" "$PREVIOUS_DATE"; then
 
     echo "All required OSTIA files already exist."
     echo "OSTIA download will be skipped."
-
-    {
-        echo "Preceding-day preparation"
-        echo "OSTIA download: skipped"
-        echo "Reason: required OSTIA files already exist"
-        echo "OSTIA period: $OSTIA_FIRST_DATE through $PREVIOUS_DATE"
-        echo
-    } >> "$WORKFLOW_RECORD"
+    echo "Preceding-day preparation"
+    echo "OSTIA download: skipped"
+    echo "Reason: required OSTIA files already exist"
+    echo "OSTIA period: $OSTIA_FIRST_DATE through $PREVIOUS_DATE"
+    echo 
 
 else
 
@@ -549,14 +559,11 @@ if preceding_sst_files_exist "$PREVIOUS_YEAR" "$PREVIOUS_DOY3"; then
 
     echo "The preceding-day SST analysis and variability files exist."
     echo "init_files_OSTIA will be skipped."
-
-    {
-        echo "init_files_OSTIA: skipped"
-        echo "Reason: analysis and variability files already exist"
-        echo "Analysis file: $PREVIOUS_ANALYSIS_FILE"
-        echo "Variability file: $PREVIOUS_VARIABILITY_FILE"
-        echo
-    } >> "$WORKFLOW_RECORD"
+    echo "init_files_OSTIA: skipped"
+    echo "Reason: analysis and variability files already exist"
+    echo "Analysis file: $PREVIOUS_ANALYSIS_FILE"
+    echo "Variability file: $PREVIOUS_VARIABILITY_FILE"
+    echo
 
 else
 
@@ -598,13 +605,10 @@ if preceding_bias_file_exists "$PREVIOUS_YEAR" "$PREVIOUS_DOY3"; then
 
     echo "The preceding-day SST bias file exists."
     echo "init_all_biases will be skipped."
-
-    {
-        echo "init_all_biases: skipped"
-        echo "Reason: bias file already exists"
-        echo "Bias file: $PREVIOUS_BIAS_FILE"
-        echo
-    } >> "$WORKFLOW_RECORD"
+    echo "init_all_biases: skipped"
+    echo "Reason: bias file already exists"
+    echo "Bias file: $PREVIOUS_BIAS_FILE"
+    echo 
 
 else
 
@@ -654,9 +658,11 @@ for ((day_offset = 0; day_offset < NUMBER_OF_DAYS; day_offset++)); do
     YEAR=$(get_year "$ANALYSIS_DATE")
     DOY3=$(get_doy3 "$ANALYSIS_DATE")
     DAY_OF_YEAR=$(get_doy_integer "$ANALYSIS_DATE")
+    ANALYSIS_OSTIA_TARGET="${ANALYSIS_DATE}T00:00:00Z"
 
     ANALYSIS_FILE="${ANALYSIS_DIR}/sst_analysis_${YEAR}_${DOY3}.mat"
     VARIABILITY_FILE="${ANALYSIS_DIR}/sst_variability_${YEAR}_${DOY3}.mat"
+    OSTIA_TWENTIETH_FILE="${ANALYSIS_DIR}/ostia_twentieth_${YEAR}_${DOY3}.mat"
 
     echo
     echo "============================================================"
@@ -667,22 +673,64 @@ for ((day_offset = 0; day_offset < NUMBER_OF_DAYS; day_offset++)); do
     echo "DDD format  : $DOY3"
     echo "Analysis    : $ANALYSIS_FILE"
     echo "Variability : $VARIABILITY_FILE"
+    echo "OSTIA Full : $OSTIA_TWENTIETH_FILE"
     echo "Predecessor : ${LAST_JOB_ID:-none}"
     echo "============================================================"
 
-    {
-        echo "============================================================"
-        echo "Daily analysis"
-        echo "Analysis date: $ANALYSIS_DATE"
-        echo "Year: $YEAR"
-        echo "Day of year: $DAY_OF_YEAR"
-        echo "DDD format: $DOY3"
-        echo "Initial predecessor: ${LAST_JOB_ID:-none}"
-        echo "============================================================"
-        echo
-    } >> "$WORKFLOW_RECORD"
-
     L2P_WAS_SUBMITTED=false
+
+        # =========================================================================
+    # Daily Step 1: Check and download OSTIA for this analysis date
+    # =========================================================================
+
+    echo
+    echo "============================================================"
+    echo "Daily OSTIA check for $ANALYSIS_DATE"
+    echo "============================================================"
+    echo "OSTIA directory : $OSTIA_DIR"
+    echo "OSTIA date      : $ANALYSIS_DATE"
+    echo "Predecessor     : ${LAST_JOB_ID:-none}"
+    echo "============================================================"
+
+    if ostia_data_exist "$ANALYSIS_DATE" "$ANALYSIS_DATE"; then
+
+        echo "OSTIA data already exist for $ANALYSIS_DATE."
+        echo "Daily OSTIA download will be skipped."
+
+        echo "Daily OSTIA status: existing"
+        echo "Daily OSTIA download: skipped"
+        echo "OSTIA date: $ANALYSIS_DATE"
+        echo
+
+    else
+
+        echo "OSTIA data do not exist for $ANALYSIS_DATE."
+        echo "Submitting daily OSTIA download."
+
+        DAILY_OSTIA_LOG="${LOG_DIR}/download_ostia_${ANALYSIS_DATE}.log"
+
+        JOB_DOWNLOAD_DAILY_OSTIA=$(
+            submit_with_optional_dependency "$LAST_JOB_ID" \
+                -o "$DAILY_OSTIA_LOG" \
+                -v TAR_DATE="$ANALYSIS_OSTIA_TARGET" \
+                "$PBS_DOWNLOAD_OSTIA"
+        )
+
+        print_job \
+            "Download daily OSTIA" \
+            "$JOB_DOWNLOAD_DAILY_OSTIA" \
+            "${LAST_JOB_ID:-none}"
+
+        record_job \
+            "$ANALYSIS_DATE" \
+            "Download daily OSTIA" \
+            "$JOB_DOWNLOAD_DAILY_OSTIA" \
+            "${LAST_JOB_ID:-none}"
+
+        # All following jobs for this date must wait for OSTIA.
+        LAST_JOB_ID="$JOB_DOWNLOAD_DAILY_OSTIA"
+
+    fi
 
     # =========================================================================
     # Step 2: Prepare L3C data
@@ -693,18 +741,58 @@ for ((day_offset = 0; day_offset < NUMBER_OF_DAYS; day_offset++)); do
 
     if l3c_data_exist "$ANALYSIS_DATE"; then
 
-        echo "L3C data already exist for $ANALYSIS_DATE."
-        echo "L2P download and geo-navigation and generate_oi_input_data and L2P delete will be skipped."
+	    echo "L3C data already exist for $ANALYSIS_DATE."
+	    echo "L2P download and geo-navigation will be skipped."
+	    echo "L3C status: existing"
+	    echo "L2P download: skipped"
+	    echo "Geo-navigation: skipped"
+	   
 
-        {
-            echo "L3C status: existing"
-            echo "L2P download: skipped"
-            echo "Geo-navigation: skipped"
-	    echo "generate_oi_input_data: skipped"
-            echo "L2P delete: skipped"
-        } >> "$WORKFLOW_RECORD"
+	    # =====================================================================
+	    # Generate the one-twentieth OSTIA input if it is missing.
+	    # =====================================================================
 
-    else
+	    if ostia_twentieth_exists "$YEAR" "$DOY3"; then
+
+		echo "OSTIA one-twentieth file already exists:"
+		echo "  $OSTIA_TWENTIETH_FILE"
+		echo "OSTIA-only generate_oi_input_data will be skipped."
+		echo "generate_oi_input_data stream ostia: skipped"
+		echo "L2P delete: skipped"
+		echo	
+
+	    else
+
+		echo "OSTIA one-twentieth file is missing:"
+		echo "  $OSTIA_TWENTIETH_FILE"
+		echo "Submitting generate_oi_input_data with STREAM='ostia'."
+
+		GENERATE_OSTIA_LOG="${LOG_DIR}/generate_oi_input_ostia_${ANALYSIS_DATE}.log"
+
+		JOB_GENERATE_OSTIA=$(
+		    submit_with_optional_dependency "$LAST_JOB_ID" \
+			-o "$GENERATE_OSTIA_LOG" \
+			-v YEAR="$YEAR",DAY_OF_YEAR="$DAY_OF_YEAR",STREAM='ostia' \
+			"$PBS_GENERATE_OI_INPUT"
+		)
+
+		print_job \
+		    "Generate OSTIA one-twentieth" \
+		    "$JOB_GENERATE_OSTIA" \
+		    "${LAST_JOB_ID:-none}"
+
+		record_job \
+		    "$ANALYSIS_DATE" \
+		    "Generate OSTIA one-twentieth" \
+		    "$JOB_GENERATE_OSTIA" \
+		    "${LAST_JOB_ID:-none}"	
+
+		# update_all_biases must wait for the OSTIA-only generation job.
+		LAST_JOB_ID="$JOB_GENERATE_OSTIA"
+
+	    fi
+
+    else 
 
         echo "L3C data do not exist for $ANALYSIS_DATE."
         echo "Submitting L2P download and geo-navigation."
@@ -787,7 +875,7 @@ for ((day_offset = 0; day_offset < NUMBER_OF_DAYS; day_offset++)); do
 	JOB_GENERATE_OI_INPUT=$(
 	submit_with_optional_dependency "$LAST_JOB_ID" \
 	    -o "$GENERATE_INPUT_LOG" \
-	    -v YEAR="$YEAR",DAY_OF_YEAR="$DAY_OF_YEAR" \
+	    -v YEAR="$YEAR",DAY_OF_YEAR="$DAY_OF_YEAR",STREAM='all' \
 	    "$PBS_GENERATE_OI_INPUT"
 	)
 
@@ -839,13 +927,7 @@ for ((day_offset = 0; day_offset < NUMBER_OF_DAYS; day_offset++)); do
 
 	else
 
-	echo "L2P cleanup skipped because this workflow did not download L2P."
-
-	{
-	    echo "L2P cleanup: skipped"
-	    echo "Reason: L3C data existed before submission"
-	    echo
-	} >> "$WORKFLOW_RECORD"
+	echo "L2P cleanup skipped because this workflow did not download L2P."	
 
 	fi
 
@@ -920,10 +1002,8 @@ for ((day_offset = 0; day_offset < NUMBER_OF_DAYS; day_offset++)); do
 
     LAST_JOB_ID="$JOB_GENERATE_OI_SST"
 
-    {
-        echo "Final job for $ANALYSIS_DATE: $LAST_JOB_ID"
-        echo
-    } >> "$WORKFLOW_RECORD"
+    echo "Final job for $ANALYSIS_DATE: $LAST_JOB_ID"
+    echo 
 
 done
 
@@ -947,10 +1027,10 @@ echo "Inspect the workflow record with:"
 echo "  cat \"$WORKFLOW_RECORD\""
 echo "============================================================"
 
-{
-    echo "============================================================"
-    echo "Workflow submission completed"
-    echo "Completion time: $(date)"
-    echo "Final submitted job: ${LAST_JOB_ID:-none}"
-    echo "============================================================"
-} >> "$WORKFLOW_RECORD"
+
+echo "============================================================"
+echo "Workflow submission completed"
+echo "Completion time: $(date)"
+echo "Final submitted job: ${LAST_JOB_ID:-none}"
+echo "============================================================"
+
